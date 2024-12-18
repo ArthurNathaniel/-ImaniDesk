@@ -10,15 +10,16 @@ if (!isset($_SESSION['receptionist_id'])) {
 }
 
 $total_revenue = 0;
+$revenue_by_payment_mode = [];
 $booking_list = [];
 
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
     // Get the selected booking date
     $booking_date = mysqli_real_escape_string($conn, $_POST['booking_date']);
 
-    // Query to calculate total revenue for the selected booking date
+    // Query to get booking details and calculate total revenue for the selected booking date
     $revenue_query = "
-        SELECT b.id, b.client_name, r.room_name, b.start_date, b.end_date, b.total_price, DATE(b.booking_date) as booking_date
+        SELECT b.id, b.client_name, r.room_name, r.room_number, b.start_date, b.end_date, b.total_price, DATE(b.booking_date) as booking_date, b.payment_mode
         FROM bookings b 
         JOIN rooms r ON b.room_id = r.id 
         WHERE DATE(b.booking_date) = '$booking_date'
@@ -30,6 +31,13 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         while ($row = $result->fetch_assoc()) {
             $booking_list[] = $row;
             $total_revenue += $row['total_price'];
+
+            // Calculate total revenue by payment mode
+            $payment_mode = $row['payment_mode'];
+            if (!isset($revenue_by_payment_mode[$payment_mode])) {
+                $revenue_by_payment_mode[$payment_mode] = 0;
+            }
+            $revenue_by_payment_mode[$payment_mode] += $row['total_price'];
         }
     } else {
         $error_message = "Error calculating revenue: " . $conn->error;
@@ -109,7 +117,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 <div class="container">
     <h2>Revenue Report</h2>
 
-    <!-- Display total revenue result -->
+    <!-- Display error message -->
     <?php
     if (!empty($error_message)) {
         echo "<p class='revenue-message error'>$error_message</p>";
@@ -131,10 +139,12 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         <tr>
             <th>#</th>
             <th>Client Name</th>
-            <th>Room</th>
+            <th>Room Name</th>
+            <th>Room Number</th>
             <th>Start Date</th>
             <th>End Date</th>
             <th>Booking Date</th>
+            <th>Payment Mode</th>
             <th>Total Price (GHS)</th>
         </tr>
         <?php foreach ($booking_list as $index => $booking) { ?>
@@ -142,9 +152,11 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 <td><?php echo $index + 1; ?></td>
                 <td><?php echo $booking['client_name']; ?></td>
                 <td><?php echo $booking['room_name']; ?></td>
+                <td><?php echo $booking['room_number']; ?></td>
                 <td><?php echo date('F j, Y', strtotime($booking['start_date'])); ?></td>
                 <td><?php echo date('F j, Y', strtotime($booking['end_date'])); ?></td>
                 <td><?php echo date('F j, Y', strtotime($booking['booking_date'])); ?></td>
+                <td><?php echo ucfirst($booking['payment_mode']); ?></td>
                 <td><?php echo number_format($booking['total_price'], 2); ?> GHS</td>
             </tr>
         <?php } ?>
@@ -152,6 +164,14 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 
     <!-- Total Revenue Display (below the table) -->
     <p class='revenue-message'>Total Revenue for <?php echo date('F j, Y', strtotime($booking_date)); ?>: <?php echo number_format($total_revenue, 2); ?> GHS</p>
+
+    <!-- Revenue by Payment Mode Display -->
+    <h3>Revenue Breakdown by Payment Mode</h3>
+    <ul>
+        <?php foreach ($revenue_by_payment_mode as $mode => $amount) { ?>
+            <li><?php echo ucfirst($mode); ?>: <?php echo number_format($amount, 2); ?> GHS</li>
+        <?php } ?>
+    </ul>
 
     <?php } else if (!empty($booking_date)) { ?>
         <p class='revenue-message'>No bookings found for <?php echo date('F j, Y', strtotime($booking_date)); ?>.</p>
