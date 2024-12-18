@@ -1,40 +1,38 @@
 <?php
-include('db.php'); // Include database connection
+include('db.php'); // Include the database connection
 
 session_start();
 
 // Check if the receptionist is logged in
 if (!isset($_SESSION['receptionist_id'])) {
-    header("Location: login_receptionist.php"); // Redirect to login if not logged in
+    header("Location: login_receptionist.php"); // Redirect to login page
     exit();
 }
 
-$total_revenue = 0; // Default total revenue
+$total_revenue = 0;
+$booking_list = [];
 
-// Check if form is submitted
 if ($_SERVER["REQUEST_METHOD"] == "POST") {
-    $start_date = $_POST['start_date'];
-    $end_date = $_POST['end_date'];
+    // Get the selected booking date
+    $booking_date = mysqli_real_escape_string($conn, $_POST['booking_date']);
 
-    // Validate input
-    if (!empty($start_date) && !empty($end_date)) {
-        // Query to calculate total revenue within the date range
-        $query = "SELECT SUM(total_price) AS total_revenue 
-                  FROM bookings 
-                  WHERE booking_date BETWEEN ? AND ?";
-        
-        $stmt = $conn->prepare($query);
-        $stmt->bind_param("ss", $start_date, $end_date);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        
-        if ($row = $result->fetch_assoc()) {
-            $total_revenue = $row['total_revenue'] ? $row['total_revenue'] : 0;
+    // Query to calculate total revenue for the selected booking date
+    $revenue_query = "
+        SELECT b.id, b.client_name, r.room_name, b.start_date, b.end_date, b.total_price, DATE(b.booking_date) as booking_date
+        FROM bookings b 
+        JOIN rooms r ON b.room_id = r.id 
+        WHERE DATE(b.booking_date) = '$booking_date'
+    ";
+
+    $result = $conn->query($revenue_query);
+
+    if ($result) {
+        while ($row = $result->fetch_assoc()) {
+            $booking_list[] = $row;
+            $total_revenue += $row['total_price'];
         }
-
-        $stmt->close();
     } else {
-        echo "<p style='color: red; text-align: center;'>Please select both start and end dates.</p>";
+        $error_message = "Error calculating revenue: " . $conn->error;
     }
 }
 ?>
@@ -44,85 +42,120 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Query Revenue by Date</title>
+    <title>Revenue Report</title>
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            background-color: #f4f4f9;
-            padding: 20px;
-        }
         .container {
-            width: 50%;
+            width: 80%;
             margin: 0 auto;
-            background-color: #fff;
-            border-radius: 8px;
-            box-shadow: 0 0 10px rgba(0,0,0,0.1);
-            padding: 20px;
+            font-family: Arial, sans-serif;
         }
         h2 {
             text-align: center;
-            color: #333;
+            margin-top: 20px;
         }
-        form {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
+        .form-group {
+            margin: 20px 0;
         }
-        label {
-            margin-bottom: 8px;
+        .form-group label {
+            display: block;
             font-weight: bold;
+            margin-bottom: 5px;
         }
-        input[type="date"] {
+        .form-group input[type="date"] {
+            width: 100%;
             padding: 10px;
-            margin-bottom: 20px;
-            width: 80%;
-            border: 1px solid #ccc;
-            border-radius: 5px;
+            margin-bottom: 10px;
         }
-        button {
+        .btn {
+            display: block;
+            width: 100%;
+            padding: 10px;
             background-color: #4CAF50;
             color: white;
+            text-align: center;
             border: none;
-            padding: 10px 20px;
-            font-size: 16px;
-            border-radius: 5px;
             cursor: pointer;
-            transition: background-color 0.3s;
+            font-size: 16px;
         }
-        button:hover {
+        .btn:hover {
             background-color: #45a049;
         }
-        .total-revenue {
+        .revenue-message {
             text-align: center;
-            margin-top: 20px;
             font-size: 20px;
             font-weight: bold;
-            color: #4CAF50;
+            margin-top: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        table, th, td {
+            border: 1px solid #ddd;
+        }
+        th, td {
+            padding: 12px;
+            text-align: center;
+        }
+        th {
+            background-color: #4CAF50;
+            color: white;
         }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2>Query Revenue by Date</h2>
+    <h2>Revenue Report</h2>
 
-    <!-- Query Form for Start Date and End Date -->
+    <!-- Display total revenue result -->
+    <?php
+    if (!empty($error_message)) {
+        echo "<p class='revenue-message error'>$error_message</p>";
+    }
+    ?>
+
+    <!-- Form to select date for revenue report -->
     <form method="POST" action="">
-        <label for="start_date">Start Date</label>
-        <input type="date" name="start_date" id="start_date" value="<?php echo isset($start_date) ? $start_date : ''; ?>" required>
-
-        <label for="end_date">End Date</label>
-        <input type="date" name="end_date" id="end_date" value="<?php echo isset($end_date) ? $end_date : ''; ?>" required>
-
-        <button type="submit">Check Revenue</button>
+        <div class="form-group">
+            <label for="booking_date">Booking Date:</label>
+            <input type="date" id="booking_date" name="booking_date" required>
+        </div>
+        <button type="submit" class="btn">Generate Report</button>
     </form>
 
-    <?php if ($_SERVER["REQUEST_METHOD"] == "POST") : ?>
-        <div class="total-revenue">
-            <p>Total Revenue from <strong><?php echo $start_date; ?></strong> to <strong><?php echo $end_date; ?></strong> is:</p>
-            <p style="font-size: 24px;">GHS <?php echo number_format($total_revenue, 2); ?></p>
-        </div>
-    <?php endif; ?>
+    <!-- Booking List Table -->
+    <?php if (!empty($booking_list)) { ?>
+    <table>
+        <tr>
+            <th>#</th>
+            <th>Client Name</th>
+            <th>Room</th>
+            <th>Start Date</th>
+            <th>End Date</th>
+            <th>Booking Date</th>
+            <th>Total Price (GHS)</th>
+        </tr>
+        <?php foreach ($booking_list as $index => $booking) { ?>
+            <tr>
+                <td><?php echo $index + 1; ?></td>
+                <td><?php echo $booking['client_name']; ?></td>
+                <td><?php echo $booking['room_name']; ?></td>
+                <td><?php echo date('F j, Y', strtotime($booking['start_date'])); ?></td>
+                <td><?php echo date('F j, Y', strtotime($booking['end_date'])); ?></td>
+                <td><?php echo date('F j, Y', strtotime($booking['booking_date'])); ?></td>
+                <td><?php echo number_format($booking['total_price'], 2); ?> GHS</td>
+            </tr>
+        <?php } ?>
+    </table>
+
+    <!-- Total Revenue Display (below the table) -->
+    <p class='revenue-message'>Total Revenue for <?php echo date('F j, Y', strtotime($booking_date)); ?>: <?php echo number_format($total_revenue, 2); ?> GHS</p>
+
+    <?php } else if (!empty($booking_date)) { ?>
+        <p class='revenue-message'>No bookings found for <?php echo date('F j, Y', strtotime($booking_date)); ?>.</p>
+    <?php } ?>
 </div>
 
 </body>
